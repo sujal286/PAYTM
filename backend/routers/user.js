@@ -1,46 +1,60 @@
-const express=require('express');
-const zod=require('zod');
-const {User}=require('../db');
+// backend/routes/user.js
+const express = require('express');
+
+const router = express.Router();
+const zod = require("zod");
+const { User, Account } = require("../db");
+const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("../config");
 const  { authMiddleware } = require("../middleware");
-const jwt=require('jsonwebtoken');
-const JWT_SECRET=require('../config');
 
-const router=express.Router();
+const signupBody = zod.object({
+    username: zod.string().email(),
+	firstName: zod.string(),
+	lastName: zod.string(),
+	password: zod.string()
+})
 
-const signupSchema=zod.object({
-    username:zod.string(),
-    password:zod.string(),
-    firstName:zod.string(),
-    password:zod.string()
-});
-
-router.post('/signup',async (req,res)=>{
-    const body=req.body;
-    const obj=signupSchema.safeParse(req.body);
-    if(!obj.success){
-        return res.json({
-            message:"Email already taken/Incorrect inputs"
+router.post("/signup", async (req, res) => {
+    const { success } = signupBody.safeParse(req.body)
+    if (!success) {
+        return res.status(411).json({
+            message: "Email already taken / Incorrect inputs"
         })
     }
 
-    const user=User.findOne({username:body.username});
+    const existingUser = await User.findOne({
+        username: req.body.username
+    })
 
-    if(user._id){
-        return res.json({
-            message:"Email already taken/incorrect inputs"
-        });
+    if (existingUser) {
+        return res.status(411).json({
+            message: "Email already taken/Incorrect inputs"
+        })
     }
 
-    const dbUser=await User.create(body);
-    const token=jwt.sign({
-        userid
-    },JWT_SECRET);
+    const user = await User.create({
+        username: req.body.username,
+        password: req.body.password,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+    })
+    const userId = user._id;
+
+    await Account.create({
+        userId,
+        balance: 1 + Math.random() * 10000
+    })
+
+    const token = jwt.sign({
+        userId
+    }, JWT_SECRET);
 
     res.json({
-        message:"User created successfully",
-        token:token
-    });
-});
+        message: "User created successfully",
+        token: token
+    })
+})
 
 
 const signinBody = zod.object({
@@ -52,7 +66,7 @@ router.post("/signin", async (req, res) => {
     const { success } = signinBody.safeParse(req.body)
     if (!success) {
         return res.status(411).json({
-            message: "Incorrect inputs"
+            message: "Email already taken / Incorrect inputs"
         })
     }
 
@@ -76,7 +90,7 @@ router.post("/signin", async (req, res) => {
     res.status(411).json({
         message: "Error while logging in"
     })
-});
+})
 
 const updateBody = zod.object({
 	password: zod.string().optional(),
@@ -92,12 +106,14 @@ router.put("/", authMiddleware, async (req, res) => {
         })
     }
 
-		await User.updateOne({ _id: req.userId }, req.body);
-	
+    await User.updateOne(req.body, {
+        id: req.userId
+    })
+
     res.json({
         message: "Updated successfully"
     })
-});
+})
 
 router.get("/bulk", async (req, res) => {
     const filter = req.query.filter || "";
@@ -122,6 +138,6 @@ router.get("/bulk", async (req, res) => {
             _id: user._id
         }))
     })
-});
+})
 
-module.exports=router;
+module.exports = router;
